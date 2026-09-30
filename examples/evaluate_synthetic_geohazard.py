@@ -1,193 +1,645 @@
 import os
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 from geohazard_interpolation import load_risk_interpolator
 
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
-
-BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BASE_PATH = os.path.dirname(
+    os.path.dirname(
+        os.path.abspath(__file__)
+    )
+)
 
 OUTPUT_PATH = os.path.join(
     BASE_PATH,
     "examples",
-    "output",
+    "output"
 )
 
-RISK_VOLUME_PATH = os.path.join(
-    OUTPUT_PATH,
-    "synthetic_risk",
-    "synthetic_risk.h5",
+RISK_NAME_3D = "synthetic_risk"
+RISK_NAME_2D = "synthetic_risk_2d"
+DISTANCE_NAME = "synthetic_risk_distance"
+COMBINED_NAME = "combined_risk"
+
+HEURISTIC_SUM_NAME = (
+    "norm_synthetic_risk_heuristic_sum"
+)
+
+HEURISTIC_SUM_SQ_NAME = (
+    "norm_synthetic_risk_heuristic_sum_sq"
+)
+
+TARGET = np.array(
+    [1000.0, 2000.0, 1000.0],
+    dtype=np.float32
 )
 
 
-# ---------------------------------------------------------------------------
-# Point evaluation
-# ---------------------------------------------------------------------------
+def evaluate_3d_points():
+    """Evaluate the 3D risk representation at selected XYZ coordinates."""
 
-def evaluate_arbitrary_points(risk_interpolator):
-    """Evaluate the geohazard at arbitrary XYZ coordinates.
-
-    Parameters
-    ----------
-    risk_interpolator : callable
-        Geohazard interpolator returned by ``load_risk_interpolator``.
-
-    Returns
-    -------
-    np.ndarray
-        Geohazard values at the requested coordinates.
-    """
-    points = np.array([
-        [1000.0, 2000.0, 600.0],
-        [1010.0, 2010.0, 590.0],
-        [1020.0, 2020.0, 580.0],
-        [1030.0, 2030.0, 570.0],
-        [1040.0, 2040.0, 560.0],
-    ])
-
-    risk_values = risk_interpolator(points)
-
-    print()
-    print("Geohazard evaluation at arbitrary coordinates:")
-    print()
-
-    for point, risk in zip(points, risk_values):
-        print(
-            f"  XYZ = ({point[0]:.1f}, "
-            f"{point[1]:.1f}, "
-            f"{point[2]:.1f}) "
-            f"-> risk = {risk:.6f}"
-        )
-
-    return risk_values
-
-
-# ---------------------------------------------------------------------------
-# Trajectory evaluation
-# ---------------------------------------------------------------------------
-
-def evaluate_synthetic_trajectory(risk_interpolator):
-    """Evaluate the geohazard along a synthetic well trajectory.
-
-    Parameters
-    ----------
-    risk_interpolator : callable
-        Geohazard interpolator returned by ``load_risk_interpolator``.
-
-    Returns
-    -------
-    tuple[np.ndarray, np.ndarray]
-        Trajectory coordinates and corresponding geohazard values.
-    """
-    trajectory = np.array([
-        [1000.0, 2000.0, 600.0],
-        [1005.0, 2005.0, 590.0],
-        [1010.0, 2010.0, 580.0],
-        [1015.0, 2015.0, 570.0],
-        [1020.0, 2020.0, 560.0],
-        [1025.0, 2025.0, 550.0],
-        [1030.0, 2030.0, 540.0],
-        [1035.0, 2035.0, 530.0],
-        [1040.0, 2040.0, 520.0],
-        [1045.0, 2045.0, 510.0],
-        [1050.0, 2050.0, 500.0],
-    ])
-
-    risk_values = risk_interpolator(trajectory)
-
-    print()
-    print("Geohazard evaluation along a synthetic trajectory:")
-    print()
-
-    for index, (point, risk) in enumerate(
-        zip(trajectory, risk_values)
-    ):
-        print(
-            f"  Point {index:02d}: "
-            f"XYZ = ({point[0]:.1f}, "
-            f"{point[1]:.1f}, "
-            f"{point[2]:.1f}) "
-            f"-> risk = {risk:.6f}"
-        )
-
-    return trajectory, risk_values
-
-
-# ---------------------------------------------------------------------------
-# Visualization
-# ---------------------------------------------------------------------------
-
-def plot_trajectory_risk(risk_values):
-    """Plot the geohazard values along the trajectory.
-
-    Parameters
-    ----------
-    risk_values : np.ndarray
-        Geohazard values evaluated along the trajectory.
-
-    Returns
-    -------
-    None
-    """
-    plt.figure(figsize=(8, 4))
-
-    plt.plot(
-        np.arange(len(risk_values)),
-        risk_values,
-        marker="o",
+    h5_path = os.path.join(
+        OUTPUT_PATH,
+        RISK_NAME_3D,
+        f"{RISK_NAME_3D}.h5",
     )
 
-    plt.xlabel("Trajectory point")
-    plt.ylabel("Geohazard value")
-    plt.title("Synthetic geohazard along a well trajectory")
-    plt.grid(True)
-    plt.tight_layout()
-    plt.show()
-
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
-def main():
-    """Run the synthetic geohazard evaluation example."""
-    if not os.path.exists(RISK_VOLUME_PATH):
-        raise FileNotFoundError(
-            "The synthetic HDF5 volume was not found.\n"
-            "Run the following command first:\n\n"
-            "    python examples/generate_synthetic_data.py"
-        )
-
-    print("Loading synthetic geohazard representation:")
-    print(f"  {RISK_VOLUME_PATH}")
-
-    risk_interpolator = load_risk_interpolator(
-        RISK_VOLUME_PATH
+    interpolator = load_risk_interpolator(
+        h5_path,
+        preload=False,
     )
 
     try:
-        evaluate_arbitrary_points(
-            risk_interpolator
+
+        points = np.array(
+            [
+                TARGET,
+                TARGET + [50.0, 50.0, -50.0],
+                TARGET + [-100.0, 100.0, -100.0],
+            ],
+            dtype=np.float32,
         )
 
-        trajectory, risk_values = evaluate_synthetic_trajectory(
-            risk_interpolator
+        values = interpolator(points)
+
+        print("\n3D risk evaluation:")
+
+        for point, value in zip(
+            points,
+            values,
+        ):
+
+            print(
+                f"  Point [{point[0]:.1f}, "
+                f"{point[1]:.1f}, "
+                f"{point[2]:.1f}]"
+                f" -> risk = {value:.6f}"
+            )
+
+    finally:
+
+        interpolator.close()
+
+
+def evaluate_trajectory():
+    """Evaluate the 3D risk representation along a synthetic well trajectory."""
+
+    h5_path = os.path.join(
+        OUTPUT_PATH,
+        RISK_NAME_3D,
+        f"{RISK_NAME_3D}.h5",
+    )
+
+    interpolator = load_risk_interpolator(
+        h5_path,
+        preload=False,
+    )
+
+    try:
+
+        n_points = 100
+
+        trajectory = np.column_stack(
+            (
+                np.linspace(
+                    TARGET[0] - 200.0,
+                    TARGET[0] + 200.0,
+                    n_points,
+                ),
+                np.linspace(
+                    TARGET[1] - 150.0,
+                    TARGET[1] + 150.0,
+                    n_points,
+                ),
+                np.linspace(
+                    TARGET[2],
+                    TARGET[2] - 500.0,
+                    n_points,
+                ),
+            )
+        ).astype(np.float32)
+
+        risks = interpolator(
+            trajectory
         )
 
-        plot_trajectory_risk(
-            risk_values
+        print("\n3D trajectory evaluation:")
+
+        print(
+            f"  Number of trajectory points: "
+            f"{len(trajectory)}"
+        )
+
+        print(
+            f"  Minimum risk: "
+            f"{np.min(risks):.6f}"
+        )
+
+        print(
+            f"  Maximum risk: "
+            f"{np.max(risks):.6f}"
+        )
+
+        print(
+            f"  Mean risk: "
+            f"{np.mean(risks):.6f}"
         )
 
     finally:
-        risk_interpolator.close()
 
-    print()
-    print("Synthetic geohazard evaluation completed.")
+        interpolator.close()
+
+
+def evaluate_2d_points():
+    """Evaluate the 2D risk representation at selected XY coordinates."""
+
+    h5_path = os.path.join(
+        OUTPUT_PATH,
+        RISK_NAME_2D,
+        f"{RISK_NAME_2D}.h5",
+    )
+
+    interpolator = load_risk_interpolator(
+        h5_path,
+        preload=False,
+    )
+
+    try:
+
+        points = np.array(
+            [
+                [TARGET[0], TARGET[1]],
+                [
+                    TARGET[0] + 100.0,
+                    TARGET[1] + 100.0,
+                ],
+                [
+                    TARGET[0] - 100.0,
+                    TARGET[1] - 100.0,
+                ],
+            ],
+            dtype=np.float32,
+        )
+
+        values = interpolator(
+            points
+        )
+
+        print("\n2D risk evaluation:")
+
+        for point, value in zip(
+            points,
+            values,
+        ):
+
+            print(
+                f"  Point [{point[0]:.1f}, "
+                f"{point[1]:.1f}]"
+                f" -> risk = {value:.6f}"
+            )
+
+    finally:
+
+        interpolator.close()
+
+
+def evaluate_distance_points():
+    """Evaluate the distance-to-risk volume at selected XYZ coordinates."""
+
+    h5_path = os.path.join(
+        OUTPUT_PATH,
+        RISK_NAME_3D,
+        f"{DISTANCE_NAME}.h5",
+    )
+
+    interpolator = load_risk_interpolator(
+        h5_path,
+        preload=False,
+    )
+
+    try:
+
+        points = np.array(
+            [
+                TARGET,
+                TARGET + [100.0, 0.0, -100.0],
+                TARGET + [250.0, 250.0, -250.0],
+            ],
+            dtype=np.float32,
+        )
+
+        distances = interpolator(
+            points
+        )
+
+        print("\nDistance-to-risk evaluation:")
+
+        for point, distance in zip(
+            points,
+            distances,
+        ):
+
+            print(
+                f"  Point [{point[0]:.1f}, "
+                f"{point[1]:.1f}, "
+                f"{point[2]:.1f}]"
+                f" -> distance = {distance:.2f} m"
+            )
+
+    finally:
+
+        interpolator.close()
+
+
+def evaluate_distance_along_trajectory():
+    """Evaluate the distance to the risk volume along a synthetic trajectory."""
+
+    h5_path = os.path.join(
+        OUTPUT_PATH,
+        RISK_NAME_3D,
+        f"{DISTANCE_NAME}.h5",
+    )
+
+    interpolator = load_risk_interpolator(
+        h5_path,
+        preload=False,
+    )
+
+    try:
+
+        n_points = 100
+
+        trajectory = np.column_stack(
+            (
+                np.linspace(
+                    TARGET[0] - 400.0,
+                    TARGET[0] + 400.0,
+                    n_points,
+                ),
+                np.linspace(
+                    TARGET[1] - 300.0,
+                    TARGET[1] + 300.0,
+                    n_points,
+                ),
+                np.linspace(
+                    TARGET[2],
+                    TARGET[2] - 700.0,
+                    n_points,
+                ),
+            )
+        ).astype(np.float32)
+
+        distances = interpolator(
+            trajectory
+        )
+
+        print(
+            "\nDistance-to-risk trajectory evaluation:"
+        )
+
+        print(
+            f"  Number of trajectory points: "
+            f"{len(trajectory)}"
+        )
+
+        print(
+            f"  Minimum distance: "
+            f"{np.min(distances):.2f} m"
+        )
+
+        print(
+            f"  Maximum distance: "
+            f"{np.max(distances):.2f} m"
+        )
+
+        print(
+            f"  Mean distance: "
+            f"{np.mean(distances):.2f} m"
+        )
+
+    finally:
+
+        interpolator.close()
+
+
+def evaluate_heuristic_points():
+    """Evaluate the heuristic sum and squared-sum representations."""
+
+    sum_h5_path = os.path.join(
+        OUTPUT_PATH,
+        RISK_NAME_3D,
+        f"{HEURISTIC_SUM_NAME}.h5",
+    )
+
+    sum_sq_h5_path = os.path.join(
+        OUTPUT_PATH,
+        RISK_NAME_3D,
+        f"{HEURISTIC_SUM_SQ_NAME}.h5",
+    )
+
+    sum_interpolator = load_risk_interpolator(
+        sum_h5_path,
+        preload=False,
+    )
+
+    sum_sq_interpolator = load_risk_interpolator(
+        sum_sq_h5_path,
+        preload=False,
+    )
+
+    try:
+
+        points = np.array(
+            [
+                TARGET,
+                TARGET + [50.0, 50.0, -50.0],
+                TARGET + [-100.0, 100.0, -100.0],
+            ],
+            dtype=np.float32,
+        )
+
+        sum_values = sum_interpolator(
+            points
+        )
+
+        sum_sq_values = sum_sq_interpolator(
+            points
+        )
+
+        print(
+            "\nHeuristic representation evaluation:"
+        )
+
+        for (
+            point,
+            sum_value,
+            sum_sq_value,
+        ) in zip(
+            points,
+            sum_values,
+            sum_sq_values,
+        ):
+
+            print(
+                f"  Point [{point[0]:.1f}, "
+                f"{point[1]:.1f}, "
+                f"{point[2]:.1f}]"
+                f" -> sum = {sum_value:.6f},"
+                f" sum_sq = {sum_sq_value:.6f}"
+            )
+
+    finally:
+
+        sum_interpolator.close()
+        sum_sq_interpolator.close()
+
+
+def evaluate_heuristic_along_trajectory():
+    """Evaluate heuristic representations along a trajectory."""
+
+    sum_h5_path = os.path.join(
+        OUTPUT_PATH,
+        RISK_NAME_3D,
+        f"{HEURISTIC_SUM_NAME}.h5",
+    )
+
+    sum_sq_h5_path = os.path.join(
+        OUTPUT_PATH,
+        RISK_NAME_3D,
+        f"{HEURISTIC_SUM_SQ_NAME}.h5",
+    )
+
+    sum_interpolator = load_risk_interpolator(
+        sum_h5_path,
+        preload=False,
+    )
+
+    sum_sq_interpolator = load_risk_interpolator(
+        sum_sq_h5_path,
+        preload=False,
+    )
+
+    try:
+
+        n_points = 100
+
+        trajectory = np.column_stack(
+            (
+                np.linspace(
+                    TARGET[0] - 200.0,
+                    TARGET[0] + 200.0,
+                    n_points,
+                ),
+                np.linspace(
+                    TARGET[1] - 150.0,
+                    TARGET[1] + 150.0,
+                    n_points,
+                ),
+                np.linspace(
+                    TARGET[2],
+                    TARGET[2] - 500.0,
+                    n_points,
+                ),
+            )
+        ).astype(np.float32)
+
+        sum_values = sum_interpolator(
+            trajectory
+        )
+
+        sum_sq_values = sum_sq_interpolator(
+            trajectory
+        )
+
+        print(
+            "\nHeuristic trajectory evaluation:"
+        )
+
+        print(
+            f"  Number of trajectory points: "
+            f"{len(trajectory)}"
+        )
+
+        print(
+            f"  Sum - minimum: "
+            f"{np.min(sum_values):.6f}"
+        )
+
+        print(
+            f"  Sum - maximum: "
+            f"{np.max(sum_values):.6f}"
+        )
+
+        print(
+            f"  Sum - mean: "
+            f"{np.mean(sum_values):.6f}"
+        )
+
+        print(
+            f"  Sum squared - minimum: "
+            f"{np.min(sum_sq_values):.6f}"
+        )
+
+        print(
+            f"  Sum squared - maximum: "
+            f"{np.max(sum_sq_values):.6f}"
+        )
+
+        print(
+            f"  Sum squared - mean: "
+            f"{np.mean(sum_sq_values):.6f}"
+        )
+
+    finally:
+
+        sum_interpolator.close()
+        sum_sq_interpolator.close()
+
+
+def evaluate_combined_points():
+    """Evaluate the combined 2D risk representation at selected XY coordinates."""
+
+    h5_path = os.path.join(
+        OUTPUT_PATH,
+        COMBINED_NAME,
+        f"{COMBINED_NAME}.h5",
+    )
+
+    interpolator = load_risk_interpolator(
+        h5_path,
+        preload=False,
+    )
+
+    try:
+
+        points = np.array(
+            [
+                [TARGET[0], TARGET[1]],
+                [
+                    TARGET[0] + 100.0,
+                    TARGET[1] + 100.0,
+                ],
+                [
+                    TARGET[0] - 100.0,
+                    TARGET[1] - 100.0,
+                ],
+            ],
+            dtype=np.float32,
+        )
+
+        values = interpolator(
+            points
+        )
+
+        print(
+            "\nCombined risk evaluation:"
+        )
+
+        for point, value in zip(
+            points,
+            values,
+        ):
+
+            print(
+                f"  Point [{point[0]:.1f}, "
+                f"{point[1]:.1f}]"
+                f" -> combined risk = {value:.6f}"
+            )
+
+    finally:
+
+        interpolator.close()
+
+
+def evaluate_combined_along_trajectory():
+    """Evaluate the combined risk along a synthetic XY trajectory."""
+
+    h5_path = os.path.join(
+        OUTPUT_PATH,
+        COMBINED_NAME,
+        f"{COMBINED_NAME}.h5",
+    )
+
+    interpolator = load_risk_interpolator(
+        h5_path,
+        preload=False,
+    )
+
+    try:
+
+        n_points = 100
+
+        trajectory = np.column_stack(
+            (
+                np.linspace(
+                    TARGET[0] - 400.0,
+                    TARGET[0] + 400.0,
+                    n_points,
+                ),
+                np.linspace(
+                    TARGET[1] - 300.0,
+                    TARGET[1] + 300.0,
+                    n_points,
+                ),
+            )
+        ).astype(np.float32)
+
+        risks = interpolator(
+            trajectory
+        )
+
+        print(
+            "\nCombined risk trajectory evaluation:"
+        )
+
+        print(
+            f"  Number of trajectory points: "
+            f"{len(trajectory)}"
+        )
+
+        print(
+            f"  Minimum combined risk: "
+            f"{np.min(risks):.6f}"
+        )
+
+        print(
+            f"  Maximum combined risk: "
+            f"{np.max(risks):.6f}"
+        )
+
+        print(
+            f"  Mean combined risk: "
+            f"{np.mean(risks):.6f}"
+        )
+
+    finally:
+
+        interpolator.close()
+
+
+def main():
+    print(
+        "Evaluating synthetic geohazard representations..."
+    )
+
+    evaluate_3d_points()
+    evaluate_trajectory()
+
+    evaluate_2d_points()
+
+    evaluate_distance_points()
+    evaluate_distance_along_trajectory()
+
+    evaluate_heuristic_points()
+    evaluate_heuristic_along_trajectory()
+
+    evaluate_combined_points()
+    evaluate_combined_along_trajectory()
+
+    print(
+        "\nSynthetic geohazard evaluation completed."
+    )
 
 
 if __name__ == "__main__":

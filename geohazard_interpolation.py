@@ -60,22 +60,32 @@ def read_prop_1d(filepath):
     return np.asarray(values)
 
 
-def _get_chunks(shape):
+def _get_chunks(shape, chunk_size=None):
     """
-    Determine the default HDF5 chunk shape.
-
-    The chunk sizes follow the configuration used by the original
-    implementation.
+    Return a suitable HDF5 chunk shape for a dataset.
 
     Args:
         shape (tuple):
             Dataset shape.
+        chunk_size (int, optional):
+            Maximum chunk size for the spatial dimensions.
+            If omitted, default chunk sizes are used.
 
     Returns:
-        tuple or None:
-            Chunk dimensions suitable for the given dataset shape.
+        tuple:
+            HDF5 chunk shape.
     """
+
     if len(shape) == 3:
+
+        if chunk_size is not None:
+
+            return (
+                min(chunk_size, shape[0]),
+                min(chunk_size, shape[1]),
+                min(chunk_size, shape[2]),
+            )
+
         return (
             min(64, shape[0]),
             min(64, shape[1]),
@@ -83,12 +93,22 @@ def _get_chunks(shape):
         )
 
     if len(shape) == 2:
+
+        if chunk_size is not None:
+
+            return (
+                min(chunk_size, shape[0]),
+                min(chunk_size, shape[1]),
+            )
+
         return (
             min(128, shape[0]),
             min(128, shape[1]),
         )
 
-    return None
+    raise ValueError(
+        f"Unsupported dataset shape: {shape}"
+    )
 
 
 def create_hdf5_dataset(
@@ -96,75 +116,133 @@ def create_hdf5_dataset(
     shape,
     resolution,
     min_corner,
+    target=None,
+    max_distance_to_wellhead=None,
+    water_depth_with_airgap=None,
+    max_distance=None,
+    risk_limits=None,
     dtype=np.float32,
     chunks=None,
+    fillvalue=None,
     dataset_name=None,
 ):
     """
-    Create a compressed HDF5 dataset and store spatial metadata.
-
-    The dataset is created with gzip compression and spatial metadata
-    describing the regular grid.
+    Create a compressed HDF5 dataset with spatial metadata.
 
     Args:
         output_path (str):
             Destination HDF5 file.
         shape (tuple):
-            Dataset dimensions.
+            Dataset shape.
         resolution (array-like):
-            Voxel resolution along each spatial axis.
+            Spatial resolution.
         min_corner (array-like):
-            World-coordinate position of the minimum grid corner.
-        dtype (numpy.dtype, optional):
-            Dataset data type. Defaults to ``numpy.float32``.
+            Minimum spatial coordinates.
+        target (array-like, optional):
+            Reference target coordinates.
+        max_distance_to_wellhead (float, optional):
+            Maximum radial distance from the wellhead.
+        water_depth_with_airgap (float, optional):
+            Water depth including air gap.
+        max_distance (float, optional):
+            Maximum distance associated with a distance hazard.
+        risk_limits (array-like, optional):
+            Risk normalization limits.
+        dtype:
+            HDF5 dataset data type.
         chunks (tuple, optional):
-            HDF5 chunk dimensions. If omitted, they are determined
-            automatically by ``_get_chunks``.
+            HDF5 chunk shape. If omitted, a default is calculated.
+        fillvalue (optional):
+            HDF5 fill value.
         dataset_name (str, optional):
-            HDF5 dataset name. If omitted, the file name without the
-            extension is used.
+            Dataset name. If omitted, it is derived from the output filename.
 
     Returns:
         tuple:
-            ``(h5py.File, h5py.Dataset)`` containing the open file and
-            created dataset.
+            Open HDF5 file handle and dataset.
     """
-    output_directory = os.path.dirname(output_path)
-
-    if output_directory:
-        os.makedirs(output_directory, exist_ok=True)
 
     if dataset_name is None:
         dataset_name = os.path.splitext(
             os.path.basename(output_path)
         )[0]
 
+    output_dir = os.path.dirname(output_path)
+
+    if output_dir:
+        os.makedirs(
+            output_dir,
+            exist_ok=True
+        )
+
+    f = h5py.File(
+        output_path,
+        "w"
+    )
+
     if chunks is None:
         chunks = _get_chunks(shape)
 
-    file_handle = h5py.File(output_path, "w")
-
-    dataset = file_handle.create_dataset(
+    dset = f.create_dataset(
         dataset_name,
         shape=shape,
         dtype=dtype,
         compression="gzip",
         chunks=chunks,
+        fillvalue=fillvalue
     )
 
-    dataset.attrs["resolution"] = np.asarray(
+    # =========================================================
+    # SPATIAL METADATA
+    # =========================================================
+
+    dset.attrs["resolution"] = np.asarray(
         resolution,
-        dtype=np.float32,
+        dtype=np.float32
     )
 
-    dataset.attrs["min_corner"] = np.asarray(
+    dset.attrs["min_corner"] = np.asarray(
         min_corner,
-        dtype=np.float32,
+        dtype=np.float32
     )
 
-    dataset.attrs["shape"] = shape
+    dset.attrs["shape"] = shape
 
-    return file_handle, dataset
+    if target is not None:
+        dset.attrs["target"] = np.asarray(
+            target,
+            dtype=np.float32
+        )
+
+    if max_distance_to_wellhead is not None:
+        dset.attrs[
+            "max_distance_to_wellhead"
+        ] = max_distance_to_wellhead
+
+    if water_depth_with_airgap is not None:
+        dset.attrs[
+            "water_depth_with_airgap"
+        ] = water_depth_with_airgap
+
+    if max_distance is not None:
+        dset.attrs[
+            "max_distance"
+        ] = max_distance
+
+    if risk_limits is not None:
+        dset.attrs[
+            "risk_limits"
+        ] = np.asarray(
+            risk_limits,
+            dtype=np.float32
+        )
+
+    if fillvalue is not None:
+        dset.attrs[
+            "fillvalue"
+        ] = fillvalue
+
+    return f, dset
 
 
 def save_hdf5(
@@ -1769,20 +1847,23 @@ def combine_images_to_hdf5(
     z_max_real,
     min_corner_real,
     resolution,
+    start_target,
+    max_distance_to_wellhead,
     chunk_size=64,
 ):
     """
     Combine normalized 2D and 3D hazard representations into one HDF5 dataset.
 
-    The combination reproduces the original WellPath logic:
+    The combination reproduces the original WellPath Top-Hole Drilling
+    filtering logic.
 
     - 2D hazards are normalized directly.
     - Thickness volumes are summed along Z before normalization.
-    - Distance volumes are normalized voxel-wise; if any voxel along Z
-      reaches normalized value 1, the resulting value is 1, otherwise
+    - Distance volumes are normalized voxel-wise. If any voxel along Z
+      reaches normalized value 1, the resulting value is 1; otherwise,
       the mean along Z is used.
-    - The final value is 1 wherever any hazard reaches 1; otherwise the
-      mean of the available normalized hazard layers is used.
+    - The final value is 1 wherever any hazard reaches 1; otherwise,
+      the mean of the available normalized hazard layers is used.
 
     Args:
         output_path (str):
@@ -1803,226 +1884,395 @@ def combine_images_to_hdf5(
             Minimum corner of the reference volume.
         resolution (array-like):
             Spatial resolution.
+        start_target (array-like):
+            Reference target coordinates.
+        max_distance_to_wellhead (float):
+            Maximum radial distance from the wellhead.
         chunk_size (int, optional):
             X-Y processing chunk size. Defaults to 64.
 
     Returns:
         str:
             Path to the combined HDF5 dataset.
-
-    Raises:
-        ValueError:
-            If no 2D or 3D input volumes are provided.
     """
-    if images_2d:
-        reference_path = images_2d[0]
-        is_2d = True
 
-    elif volumes_3d:
-        reference_path = volumes_3d[0]
-        is_2d = False
-
-    else:
-        raise ValueError(
-            "No input data (2D or 3D)."
-        )
-
-    reference_dset, reference_desc, reference_file = (
-        load_hdf5_lazy(
-            reference_path
-        )
+    print(
+        "Starting generation of the combined risk "
+        "representation for Top-Hole Drilling (THD)."
     )
 
-    resolution = reference_desc[
-        "resolution"
-    ]
+    f_out = None
+    f_ref = None
 
-    if is_2d:
-        shape = reference_dset.shape
-
-    else:
-        shape = (
-            reference_dset.shape[0],
-            reference_dset.shape[1],
-            1,
-        )
-
-    output_min_corner = np.asarray(
-        min_corner_real[:2]
-    )
-
-    file_out, dataset_out = create_hdf5_dataset(
-        output_path=output_path,
-        shape=shape,
-        resolution=resolution,
-        min_corner=output_min_corner,
-        dtype=np.float32,
-        chunks=(
-            min(chunk_size, shape[0]),
-            min(chunk_size, shape[1]),
-            1,
-        ),
-        dataset_name="combined_risk",
-    )
-
-    min_corner_z = min_corner_real[2]
-
-    z_idx_max = int(
-        np.floor(
-            (
-                z_max_real
-                - min_corner_z
-            )
-            / resolution[2]
-        )
-    )
-
-    if volumes_3d:
-        temporary_dset, _, temporary_file = (
-            load_hdf5_lazy(
-                volumes_3d[0]
-            )
-        )
-
-        z_idx_max = min(
-            z_idx_max,
-            temporary_dset.shape[2] - 1,
-        )
-
-        temporary_file.close()
-
-    if z_idx_max < 0:
-        reference_file.close()
-        file_out.close()
-
-        raise ValueError(
-            "Invalid z_max_real."
-        )
-
-    dsets_2d = []
     files_2d = []
-
-    dsets_3d = []
     files_3d = []
 
+    tmp_path = output_path + ".tmp"
+
     try:
-        for path in images_2d:
-            dataset, _, file_handle = (
-                load_hdf5_lazy(path)
+
+        # =========================================================
+        # REFERENCE
+        # =========================================================
+
+        if images_2d:
+
+            ref_path = images_2d[0]
+            is_2d = True
+
+        elif volumes_3d:
+
+            ref_path = volumes_3d[0]
+            is_2d = False
+
+        else:
+
+            raise ValueError(
+                "No input data (2D or 3D)."
             )
 
-            dsets_2d.append(dataset)
-            files_2d.append(file_handle)
+        dset_ref, desc, f_ref = load_hdf5_lazy(
+            ref_path
+        )
+
+        # The combined representation is always 2D.
+        resolution_2d = np.asarray(
+            desc["resolution"][:2],
+            dtype=np.float32
+        )
+
+        # =========================================================
+        # SHAPE
+        # =========================================================
+
+        if is_2d:
+
+            shape = dset_ref.shape
+
+        else:
+
+            shape = (
+                dset_ref.shape[0],
+                dset_ref.shape[1],
+                1
+            )
+
+        # =========================================================
+        # 2D SPATIAL METADATA
+        # =========================================================
+
+        min_corner_2d = np.asarray(
+            min_corner_real[:2],
+            dtype=np.float32
+        )
+
+        target_2d = np.asarray(
+            start_target[:2],
+            dtype=np.float32
+        )
+
+        # =========================================================
+        # CREATE TEMPORARY DATASET
+        # =========================================================
+
+        chunks = _get_chunks(
+            shape,
+            chunk_size=chunk_size
+        )
+
+        chunk_x, chunk_y = chunks[:2]
+
+        f_out, dset_out = create_hdf5_dataset(
+            output_path=tmp_path,
+            shape=shape,
+            resolution=resolution_2d,
+            min_corner=min_corner_2d,
+            target=target_2d,
+            max_distance_to_wellhead=(
+                max_distance_to_wellhead
+            ),
+            dtype=np.float32,
+            chunks=chunks,
+            dataset_name="combined_risk",
+        )
+
+        # =========================================================
+        # DATASET NAME
+        # =========================================================
+
+        correct_name = os.path.splitext(
+            os.path.basename(output_path)
+        )[0]
+
+        wrong_name = list(
+            f_out.keys()
+        )[0]
+
+        if wrong_name != correct_name:
+
+            f_out.move(
+                wrong_name,
+                correct_name
+            )
+
+            dset_out = f_out[
+                correct_name
+            ]
+
+        # =========================================================
+        # COMBINED-RISK METADATA
+        # =========================================================
+
+        dset_out.attrs["images_2d"] = np.asarray(
+            images_2d,
+            dtype=h5py.string_dtype()
+        )
+
+        dset_out.attrs["limits_2d"] = np.asarray(
+            limits_2d,
+            dtype=np.float32
+        )
+
+        dset_out.attrs["volumes_3d"] = np.asarray(
+            volumes_3d,
+            dtype=h5py.string_dtype()
+        )
+
+        dset_out.attrs["limits_3d"] = np.asarray(
+            limits_3d,
+            dtype=np.float32
+        )
+
+        dset_out.attrs["check_type_3d"] = np.asarray(
+            check_type_3d,
+            dtype=h5py.string_dtype()
+        )
+
+        dset_out.attrs["z_max_real"] = z_max_real
+
+        # =========================================================
+        # PRECOMPUTE Z LIMIT
+        # =========================================================
+
+        z_idx_max = None
+
+        if volumes_3d:
+
+            dset_tmp, desc_tmp, f_tmp = load_hdf5_lazy(
+                volumes_3d[0]
+            )
+
+            min_corner_3d = np.asarray(
+                desc_tmp["min_corner"],
+                dtype=np.float32
+            )
+
+            if min_corner_3d.size < 3:
+
+                f_tmp.close()
+
+                raise ValueError(
+                    "The reference 3D volume must have "
+                    "a three-dimensional min_corner."
+                )
+
+            min_corner_z = min_corner_3d[2]
+
+            resolution_3d = np.asarray(
+                desc_tmp["resolution"],
+                dtype=np.float32
+            )
+
+            z_idx_max = int(
+                np.floor(
+                    (
+                        z_max_real
+                        - min_corner_z
+                    )
+                    / resolution_3d[2]
+                )
+            )
+
+            z_idx_max = min(
+                z_idx_max,
+                dset_tmp.shape[2] - 1
+            )
+
+            f_tmp.close()
+
+            if z_idx_max < 0:
+
+                raise ValueError(
+                    "z_max_real is invalid."
+                )
+
+        # =========================================================
+        # OPEN 2D DATASETS
+        # =========================================================
+
+        dsets_2d = []
+
+        for path in images_2d:
+
+            dset, _, f = load_hdf5_lazy(
+                path
+            )
+
+            dsets_2d.append(
+                dset
+            )
+
+            files_2d.append(
+                f
+            )
+
+        # =========================================================
+        # OPEN 3D DATASETS
+        # =========================================================
+
+        dsets_3d = []
 
         for path in volumes_3d:
-            dataset, _, file_handle = (
-                load_hdf5_lazy(path)
+
+            dset, _, f = load_hdf5_lazy(
+                path
             )
 
-            dsets_3d.append(dataset)
-            files_3d.append(file_handle)
+            dsets_3d.append(
+                dset
+            )
+
+            files_3d.append(
+                f
+            )
+
+        # =========================================================
+        # PROCESS BY CHUNKS
+        # =========================================================
 
         for i in range(
             0,
             shape[0],
-            chunk_size,
+            chunk_x
         ):
+
             for j in range(
                 0,
                 shape[1],
-                chunk_size,
+                chunk_y
             ):
+
                 i_end = min(
-                    i + chunk_size,
-                    shape[0],
+                    i + chunk_x,
+                    shape[0]
                 )
 
                 j_end = min(
-                    j + chunk_size,
-                    shape[1],
+                    j + chunk_y,
+                    shape[1]
                 )
 
                 normalized_layers = []
 
-                for dataset, limits in zip(
+                # =================================================
+                # 2D HAZARDS
+                # =================================================
+
+                for dset, limits in zip(
                     dsets_2d,
-                    limits_2d,
+                    limits_2d
                 ):
-                    chunk = dataset[
+
+                    chunk = dset[
                         i:i_end,
                         j:j_end,
-                        0,
+                        0
                     ]
 
                     normalized = _normalize_values(
                         chunk,
-                        limits,
+                        limits
                     )
 
                     normalized_layers.append(
                         normalized
                     )
 
+                # =================================================
+                # 3D HAZARDS
+                # =================================================
+
                 for (
-                    dataset,
+                    dset,
                     limits,
-                    hazard_type,
+                    hazard_type
                 ) in zip(
                     dsets_3d,
                     limits_3d,
-                    check_type_3d,
+                    check_type_3d
                 ):
-                    subvolume = dataset[
+
+                    subvolume = dset[
                         i:i_end,
                         j:j_end,
-                        :z_idx_max + 1,
+                        :z_idx_max + 1
                     ]
 
                     if hazard_type == "Thickness":
+
                         thickness = np.sum(
                             subvolume,
-                            axis=2,
+                            axis=2
                         )
 
                         normalized = _normalize_values(
                             thickness,
-                            limits,
+                            limits
                         )
 
                     elif hazard_type == "Distance":
+
                         normalized_volume = (
                             _normalize_values(
                                 subvolume,
-                                limits,
+                                limits
                             )
                         )
 
                         mask = np.any(
                             normalized_volume == 1,
-                            axis=2,
+                            axis=2
                         )
 
                         mean_values = np.mean(
                             normalized_volume,
-                            axis=2,
+                            axis=2
                         )
 
                         normalized = np.where(
                             mask,
                             1,
-                            mean_values,
+                            mean_values
                         )
 
                     else:
+
                         continue
 
                     normalized_layers.append(
                         normalized
                     )
 
+                # =================================================
+                # FINAL COMBINATION
+                # =================================================
+
                 if not normalized_layers:
+
                     raise ValueError(
-                        "No hazard layers available for combination."
+                        "No valid risk layers were available "
+                        "to combine. Check images_2d, volumes_3d "
+                        "and check_type_3d."
                     )
 
                 stacked = np.stack(
@@ -2031,37 +2281,119 @@ def combine_images_to_hdf5(
 
                 mask_ones = np.any(
                     stacked == 1,
-                    axis=0,
+                    axis=0
                 )
 
                 mean_values = np.mean(
                     stacked,
-                    axis=0,
+                    axis=0
                 )
 
                 final_chunk = np.where(
                     mask_ones,
                     1,
-                    mean_values,
+                    mean_values
                 )
 
-                dataset_out[
+                # =================================================
+                # WRITE
+                # =================================================
+
+                dset_out[
                     i:i_end,
                     j:j_end,
-                    0,
+                    0
                 ] = final_chunk
 
-        file_out.flush()
+        # =========================================================
+        # FLUSH OUTPUT
+        # =========================================================
+
+        f_out.flush()
+
+        f_out.close()
+        f_out = None
+
+        # =========================================================
+        # CLOSE INPUTS
+        # =========================================================
+
+        for f in files_2d:
+
+            f.close()
+
+        files_2d = []
+
+        for f in files_3d:
+
+            f.close()
+
+        files_3d = []
+
+        f_ref.close()
+        f_ref = None
+
+        # =========================================================
+        # REPLACE OUTPUT
+        # =========================================================
+
+        os.replace(
+            tmp_path,
+            output_path
+        )
+
+        tmp_path = None
+
+    except Exception as e:
+
+        print(e)
+        raise
 
     finally:
-        for file_handle in files_2d:
-            file_handle.close()
 
-        for file_handle in files_3d:
-            file_handle.close()
+        # =========================================================
+        # CLOSE OPEN FILES
+        # =========================================================
 
-        file_out.close()
-        reference_file.close()
+        if f_out is not None:
+
+            f_out.close()
+
+        if f_ref is not None:
+
+            f_ref.close()
+
+        for f in files_2d:
+
+            f.close()
+
+        for f in files_3d:
+
+            f.close()
+
+        # =========================================================
+        # REMOVE TEMPORARY FILE IF FAILED
+        # =========================================================
+
+        if (
+            tmp_path is not None
+            and os.path.exists(tmp_path)
+        ):
+
+            try:
+
+                os.remove(
+                    tmp_path
+                )
+
+            except PermissionError:
+
+                pass
+
+    print(
+        "Finished generation of the combined risk "
+        "representation for Top-Hole Drilling (THD)."
+    )
 
     return output_path
 
