@@ -1,524 +1,174 @@
-# Geohazard-Representation
+# Geohazard Representation
 
-This repository provides computational tools for transforming scattered geohazard data into regular spatial representations and evaluating geohazard values at arbitrary spatial coordinates.
+This repository provides a Python implementation of regular spatial representation, interpolation, distance evaluation, heuristic preprocessing, and combined representation of geohazard data.
 
-The implementation is designed for geohazard-aware offshore well trajectory applications, where geological information may initially be available as scattered spatial points and must be evaluated repeatedly along candidate well trajectories.
-
-The original geohazard datasets are not distributed with this repository because they contain confidential subsurface information. Instead, a fully reproducible synthetic example is provided to demonstrate the complete computational workflow.
-
----
-
-## Overview
-
-The main workflow implemented in this repository is:
-
-```text
-Scattered geohazard data
-        │
-        │  x.prop
-        │  y.prop
-        │  z.prop
-        │  risk.prop
-        ▼
-Regular spatial representation
-        │
-        │  HDF5
-        ▼
-Geohazard interpolator
-        │
-        ▼
-XYZ coordinates
-        │
-        ▼
-Geohazard values
-        │
-        ▼
-Trajectory evaluation
-```
-
-The repository also provides additional representations and processing steps:
-
-```text
-                    ┌── 2D regular spatial representation
-                    │
-Scattered data ─────┼── 3D regular spatial representation
-                    │
-                    └── Distance representation
-                              │
-                              ▼
-                    Heuristic representations
-                              │
-                              ▼
-                    Combined THD representation
-```
-
-The main functionality is provided by `geohazard_interpolation.py`.
-
-The module supports:
-
-- Reading geohazard data stored in `.prop` files.
-- Generation of 2D regular spatial representations.
-- Generation of 3D regular spatial representations.
-- HDF5-based storage for large spatial volumes.
-- Distance-volume generation from geohazard locations.
-- Thickness-related processing.
-- Heuristic cumulative representations.
-- Combined risk representation generation.
-- Lazy loading of HDF5 datasets.
-- Bilinear interpolation for 2D representations.
-- Trilinear interpolation for 3D representations.
-- Evaluation of geohazard values at arbitrary spatial coordinates.
-- Evaluation of distance-to-risk values.
-- Evaluation of heuristic representations.
-- Optional azimuth-based evaluation for 3D volumes.
-
----
+The repository contains the publicly releasable components of a computational workflow for evaluating geological risks in three-dimensional space. It is designed to provide reproducible examples of the geohazard representation methodology without requiring access to confidential field datasets or the complete proprietary well trajectory optimization framework.
 
 ## Requirements
 
-The code requires Python 3.10 or newer.
+- Python 3.10 or newer
+- NumPy
+- SciPy
+- h5py
 
-The main dependencies are:
-
-```text
-numpy
-scipy
-h5py
-```
-
-They can be installed with:
+The required dependencies can be installed with:
 
 ```bash
 pip install -e .
 ```
 
-The synthetic example also uses Matplotlib for visualization:
-
-```bash
-pip install matplotlib
-```
-
-Alternatively, the dependencies can be installed directly with:
-
-```bash
-pip install numpy scipy h5py matplotlib
-```
-
----
-
 ## Repository structure
 
 ```text
-.
+Geohazard-Representation/
+│
 ├── geohazard_interpolation.py
+│
+├── examples/
+│   ├── generate_synthetic_data.py
+│   ├── generate_heuristic_data.py
+│   ├── generate_combined_risk.py
+│   ├── evaluate_synthetic_geohazard.py
+│   │
+│   └── data/
+│       └── synthetic_geohazard/
+│           ├── x.prop
+│           ├── y.prop
+│           ├── z.prop
+│           ├── synthetic_risk.prop
+│           └── synthetic_risk_2d.prop
+│
 ├── pyproject.toml
-├── README.md
-└── examples/
-    ├── generate_synthetic_data.py
-    ├── generate_heuristic_data.py
-    ├── generate_combined_risk.py
-    └── evaluate_synthetic_geohazard.py
+└── README.md
 ```
 
-The `geohazard_interpolation.py` module contains the reusable geohazard-processing functions.
-
-The `examples/` directory contains a complete synthetic workflow that does not require access to confidential geological data.
-
-Generated synthetic data and HDF5 representations are stored under:
+Generated HDF5 files are written to:
 
 ```text
-examples/
-├── data/
-│   └── synthetic_geohazard/
-└── output/
+examples/output/
 ```
 
-These generated directories do not need to be committed to the repository.
+This directory is excluded from version control through `.gitignore`.
 
----
+## Synthetic example
 
-# Input data format
+The repository includes a complete synthetic workflow that can be executed without access to confidential geological data.
 
-The geohazard source data are represented by four `.prop` files:
+The synthetic example generates a three-dimensional geohazard distribution and a two-dimensional geohazard distribution around a target location. The generated data are used to demonstrate the complete processing workflow, including regular spatial representation, distance evaluation, heuristic preprocessing, combined risk representation, and spatial evaluation.
+
+The synthetic `.prop` files are included in the repository so that the example can be reproduced directly after cloning the project. The `generate_synthetic_data.py` script can also regenerate these input files.
+
+## 1. Regular spatial representation
+
+The repository converts scattered geohazard points into regular spatial representations stored in HDF5 format.
+
+For three-dimensional geohazards, the representation is defined over a regular voxel grid:
 
 ```text
-x.prop
-y.prop
-z.prop
-risk.prop
+X × Y × Z
 ```
 
-Each position in the four files represents one source point:
+For two-dimensional geohazards, the representation is defined over a regular spatial grid:
 
 ```text
-x[i], y[i], z[i], risk[i]
+X × Y
 ```
 
-For example:
+The spatial resolution, grid origin, target location, and other relevant metadata are stored as HDF5 dataset attributes.
 
-```text
-x.prop       y.prop       z.prop       risk.prop
--------      -------      -------      ---------
-x[0]         y[0]         z[0]         risk[0]
-x[1]         y[1]         z[1]         risk[1]
-x[2]         y[2]         z[2]         risk[2]
-...
-```
-
-The `.prop` reader also supports run-length notation using the form:
-
-```text
-N*value
-```
-
-For example:
-
-```text
-100*0.0
-50*1.0
-```
-
-represents 100 values equal to `0.0` followed by 50 values equal to `1.0`.
-
-The four files must contain the same number of values.
-
----
-
-# Synthetic example
-
-Because the original geohazard datasets contain confidential subsurface information, they are not distributed with this repository.
-
-Instead, the repository provides a synthetic dataset with the same `.prop` input structure and a reproducible processing workflow.
-
-The synthetic dataset represents a spatially varying geohazard field and is intended only to demonstrate the computational functionality.
-
-It should not be interpreted as a geological model.
-
-The synthetic example uses:
-
-```text
-Target:                         [1000, 2000, 1000] m
-Resolution:                     10 × 10 × 10 m
-Maximum distance:               300 m
-Maximum distance to wellhead:   1000 m
-Number of source points:        10000
-Random seed:                    42
-```
-
----
-
-# 1. Generate the synthetic source data
-
-Run:
+The three-dimensional representation can be generated with:
 
 ```bash
 python examples/generate_synthetic_data.py
 ```
 
-The script creates:
+This generates the synthetic three-dimensional risk volume together with the corresponding two-dimensional and distance representations.
 
-```text
-examples/data/synthetic_geohazard/
-├── x.prop
-├── y.prop
-├── z.prop
-└── risk.prop
-```
+## 2. Two-dimensional geohazard representation
 
-The generated files contain scattered XYZ coordinates and an associated geohazard value for each source point.
+Two-dimensional geohazard information can be interpolated onto a regular X-Y grid.
 
-A fixed random seed is used so that the synthetic source data are reproducible.
+The resulting HDF5 representation can be evaluated at arbitrary X-Y coordinates using the interpolation utilities provided by the repository.
 
-The same script also generates:
+The synthetic workflow demonstrates this process using `synthetic_risk_2d.prop`.
 
-- A 3D regular spatial representation.
-- A 2D regular spatial representation.
-- A distance volume.
+## 3. Distance representation
 
-The generated HDF5 files are stored under:
+For geohazards represented as spatial volumes, the repository can generate a distance-to-risk volume.
 
-```text
-examples/output/
-├── synthetic_risk/
-│   ├── synthetic_risk.h5
-│   └── synthetic_risk_distance.h5
-└── synthetic_risk_2d/
-    └── synthetic_risk_2d.h5
-```
+For each voxel, the distance to the nearest valid risk voxel is calculated up to a specified maximum distance.
 
----
+The resulting distance volume is stored in HDF5 format and can be evaluated at arbitrary three-dimensional coordinates.
 
-# 2. Generate the 3D regular spatial representation
+## 4. Heuristic representations
 
-The scattered source points can be converted into a 3D regular spatial representation using:
+The repository provides preprocessing functions for generating cumulative risk representations used by heuristic search methods.
 
-```python
-generate_interpolated_volume(
-    path=source_path,
-    risk_name="synthetic_risk",
-    output_path=output_path,
-    resolution=resolution,
-    start_target=target,
-    water_depth_with_airgap=water_depth_with_airgap,
-    max_distance=max_distance,
-)
-```
+For a selected depth interval, cumulative sums and cumulative sums of squared risk values can be generated from a three-dimensional risk volume.
 
-The synthetic example uses a spatial resolution of:
-
-```text
-10 × 10 × 10 m
-```
-
-The source points are assigned to a regular spatial grid using a nearest-neighbor search based on `scipy.spatial.cKDTree`.
-
-The resulting representation is stored in HDF5 format.
-
-This allows large spatial representations to remain disk-backed instead of requiring the complete volume to be loaded into memory.
-
----
-
-# 3. Generate a 2D regular spatial representation
-
-The source data can also be converted into a 2D geohazard representation using:
-
-```python
-generate_2d_image(
-    path=source_path,
-    risk_name="synthetic_risk_2d",
-    output_path=output_path,
-    resolution=resolution,
-    start_target=target,
-    water_depth_with_airgap=water_depth_with_airgap,
-    max_distance_to_wellhead=max_distance_to_wellhead,
-)
-```
-
-The 2D representation is generated on the horizontal plane and stored as an HDF5 dataset.
-
-Missing locations in the source data are filled using nearby valid spatial values.
-
----
-
-# 4. Generate a distance volume
-
-A distance volume can be generated from the spatial locations containing positive geohazard values:
-
-```python
-generate_distance_volume(
-    path=source_path,
-    risk_name="synthetic_risk",
-    output_path=output_path,
-    resolution=resolution,
-    start_target=target,
-    water_depth_with_airgap=water_depth_with_airgap,
-    max_distance=max_distance,
-)
-```
-
-The resulting representation stores the distance from each regular-grid voxel to the nearest voxel containing a positive geohazard value.
-
-The distance search is limited by the specified maximum distance.
-
-The generated file is:
-
-```text
-examples/output/synthetic_risk/synthetic_risk_distance.h5
-```
-
-This representation can be used when geohazard evaluation is based on distance to geological features rather than directly on a continuous geohazard magnitude.
-
----
-
-# 5. Generate heuristic representations
-
-The repository also provides functionality for generating cumulative heuristic representations from a 3D geohazard volume.
-
-Run:
+The synthetic example generates these representations with:
 
 ```bash
 python examples/generate_heuristic_data.py
 ```
 
-The synthetic example uses the following depth interval:
+The resulting HDF5 files contain the precomputed values required to efficiently evaluate risk-related heuristic information without repeatedly processing the complete three-dimensional volume.
 
-```text
-Minimum depth: 300 m
-Maximum depth: 900 m
-Direction:     up
-```
+## 5. Combined risk representation
 
-Two HDF5 representations are generated:
+Multiple geohazard representations can be combined into a single spatial risk representation.
 
-```text
-examples/output/synthetic_risk/
-├── norm_synthetic_risk_heuristic_sum.h5
-└── norm_synthetic_risk_heuristic_sum_sq.h5
-```
+The combination supports:
 
-The first representation stores cumulative risk values, while the second stores cumulative squared-risk values.
+- two-dimensional geohazard layers;
+- three-dimensional thickness-based representations;
+- three-dimensional distance-based representations;
+- normalization using the corresponding risk limits; and
+- spatial combination of the normalized layers.
 
-These representations can be queried without loading the complete source volume into memory.
-
----
-
-# 6. Generate the combined risk representation
-
-The repository provides a function for combining 2D and 3D geohazard representations into a single spatial representation.
-
-The synthetic example can be generated with:
+The synthetic example generates the combined representation with:
 
 ```bash
 python examples/generate_combined_risk.py
 ```
 
-The resulting file is:
+The resulting representation is stored as an HDF5 dataset.
 
-```text
-examples/output/combined_risk/
-└── combined_risk.h5
-```
+## 6. Loading an HDF5 risk representation
 
-The combined representation processes the available risk layers chunk by chunk.
+The repository provides lazy-loading utilities for HDF5 representations.
 
-The combination supports:
-
-- 2D risk layers.
-- 3D thickness-based layers.
-- 3D distance-based layers.
-- Normalization using the corresponding risk limits.
-- Combination of multiple normalized risk layers.
-
-For each spatial location, the combination preserves the maximum normalized risk when any individual layer reaches the maximum normalized value. Otherwise, the normalized layers are averaged.
-
-This chunk-based processing allows the combined representation to be generated without constructing a complete in-memory combined volume.
-
----
-
-# 7. Load an HDF5 geohazard representation
-
-Once a regular spatial representation has been generated, it can be loaded through the public interpolator interface:
+A risk interpolator can be created with:
 
 ```python
 from geohazard_interpolation import load_risk_interpolator
 
-risk_interpolator = load_risk_interpolator(
-    "examples/output/synthetic_risk/synthetic_risk.h5"
+interpolator = load_risk_interpolator(
+    "path/to/risk.h5"
 )
 ```
 
-The HDF5 file remains available to the interpolator while it is being used.
+The interpolator provides spatial evaluation without requiring the complete HDF5 volume to be loaded into memory.
 
-The complete volume does not need to be converted into a conventional in-memory NumPy array.
+## 7. Evaluating arbitrary coordinates
 
-When the evaluation is finished, close the associated HDF5 file:
-
-```python
-risk_interpolator.close()
-```
-
----
-
-# 8. Evaluate geohazard values at arbitrary coordinates
-
-The interpolator accepts an array of XYZ coordinates:
+A three-dimensional risk representation can be evaluated at individual coordinates:
 
 ```python
-import numpy as np
-
-points = np.array([
-    [1000.0, 2000.0, 500.0],
-    [1010.0, 2010.0, 490.0],
-    [1020.0, 2020.0, 480.0],
-])
-
-risk_values = risk_interpolator(points)
-
-print(risk_values)
+risk = interpolator([1000.0, 2000.0, 1000.0])
 ```
 
-The returned array contains one geohazard value for each input coordinate:
-
-```text
-point[0] → risk_values[0]
-point[1] → risk_values[1]
-point[2] → risk_values[2]
-```
-
-For a 2D representation, bilinear interpolation is used.
-
-For a 3D representation, trilinear interpolation is used.
-
-Coordinates outside the spatial boundaries are clamped to the nearest volume boundary.
-
----
-
-# 9. Evaluate a well trajectory
-
-A well trajectory can be represented as an array of XYZ coordinates:
+Two-dimensional representations can be evaluated using X-Y coordinates:
 
 ```python
-trajectory = np.array([
-    [1000.0, 2000.0, 600.0],
-    [1005.0, 2005.0, 590.0],
-    [1010.0, 2010.0, 580.0],
-    [1015.0, 2015.0, 570.0],
-    [1020.0, 2020.0, 560.0],
-])
-
-risk_values = risk_interpolator(trajectory)
+risk = interpolator([1000.0, 2000.0])
 ```
 
-The resulting array contains the geohazard value evaluated at every trajectory point.
+The same approach can be used for evaluating points along a well trajectory.
 
-This allows the same regular spatial representation to be repeatedly queried during well trajectory evaluation.
+## 8. Complete synthetic workflow
 
-For example:
-
-```python
-for point, risk in zip(trajectory, risk_values):
-    print(
-        f"Point: {point} -> Geohazard value: {risk:.6f}"
-    )
-```
-
----
-
-# 10. Evaluate distance values
-
-Distance representations can be loaded using the same interpolator interface:
-
-```python
-distance_interpolator = load_risk_interpolator(
-    "examples/output/synthetic_risk/synthetic_risk_distance.h5"
-)
-```
-
-Given XYZ coordinates:
-
-```python
-points = np.array([
-    [1000.0, 2000.0, 1000.0],
-    [1100.0, 2000.0, 900.0],
-    [1250.0, 2250.0, 750.0],
-])
-
-distances = distance_interpolator(points)
-```
-
-The returned values represent the distance from each query point to the nearest positive geohazard voxel within the generated distance representation.
-
-Close the interpolator when it is no longer needed:
-
-```python
-distance_interpolator.close()
-```
-
----
-
-# 11. Complete synthetic workflow
-
-The complete synthetic workflow can be executed from the repository root with:
+The complete example can be executed with:
 
 ```bash
 python examples/generate_synthetic_data.py
@@ -527,33 +177,7 @@ python examples/generate_combined_risk.py
 python examples/evaluate_synthetic_geohazard.py
 ```
 
-The scripts perform the following operations:
-
-```text
-1. Generate synthetic .prop source data
-                ↓
-2. Generate 3D regular spatial representation
-                ↓
-3. Generate 2D regular spatial representation
-                ↓
-4. Generate distance volume
-                ↓
-5. Generate heuristic representations
-                ↓
-6. Generate combined risk representation
-                ↓
-7. Evaluate all generated representations
-                ↓
-8. Evaluate synthetic trajectories
-```
-
-To reproduce the complete workflow from a clean state, the generated output can first be removed:
-
-```bash
-rm -rf examples/output
-```
-
-Then run:
+Or, equivalently:
 
 ```bash
 python examples/generate_synthetic_data.py && \
@@ -562,128 +186,56 @@ python examples/generate_combined_risk.py && \
 python examples/evaluate_synthetic_geohazard.py
 ```
 
-The generated source data and HDF5 files will be recreated automatically.
+The final evaluation script demonstrates:
 
----
+- three-dimensional risk evaluation;
+- trajectory-based risk evaluation;
+- two-dimensional risk evaluation;
+- distance evaluation;
+- distance evaluation along a trajectory;
+- heuristic evaluation;
+- heuristic evaluation along a trajectory;
+- combined risk evaluation; and
+- combined risk evaluation along a trajectory.
 
-# HDF5 representation
+All generated HDF5 files are written to `examples/output/` and are ignored by Git.
 
-The regular spatial representations are stored using HDF5.
+## HDF5 representation
 
-The datasets contain spatial values together with metadata describing properties such as:
+HDF5 is used as the storage format for the regular spatial representations.
 
-- Spatial resolution.
-- Minimum spatial corner.
-- Dataset shape.
-- Target coordinates, when applicable.
-- Maximum distance parameters, when applicable.
-- Risk limits, when applicable.
+This allows large three-dimensional datasets to be processed without requiring the complete volume to remain in RAM. The implementation uses HDF5 chunking and lazy access when reading and processing the generated representations.
 
-The HDF5 representation is particularly useful for large geohazard volumes because the data can remain disk-backed during processing and evaluation.
+Relevant spatial metadata, such as resolution, grid origin, target location, and representation-specific parameters, are stored as HDF5 dataset attributes.
 
-The interpolator uses the spatial metadata to transform physical coordinates into the corresponding regular-grid coordinates.
+## Interpolation
 
----
+The repository uses spatial interpolation and nearest-neighbor operations to map scattered geohazard information onto regular spatial representations.
 
-# Interpolation
+The resulting regular representation provides a consistent spatial domain for subsequent risk evaluation and preprocessing.
 
-For 2D representations, geohazard values are evaluated using bilinear interpolation.
+## Data confidentiality
 
-For 3D representations, geohazard values are evaluated using trilinear interpolation.
+The repository contains synthetic data only.
 
-Conceptually:
+The geological datasets used in the corresponding field application are confidential and are therefore not distributed with this repository. Similarly, the complete trajectory optimization framework and other proprietary components are outside the scope of this public repository.
 
-```text
-Physical coordinates
-        │
-        ▼
-Regular-grid coordinates
-        │
-        ▼
-Neighboring grid values
-        │
-        ▼
-Bilinear / trilinear interpolation
-        │
-        ▼
-Geohazard value
-```
+The examples are intended to reproduce the geohazard representation and evaluation workflow using synthetic data without exposing confidential field information.
 
-This allows geohazard values to be evaluated at coordinates that do not coincide exactly with the centers of the regular spatial cells.
+## Reproducibility
 
----
+The repository is structured so that the synthetic workflow can be reproduced from a clean installation using the included input data and example scripts.
 
-# Lazy HDF5 processing
-
-The implementation is designed to avoid loading large spatial volumes completely into memory whenever possible.
-
-HDF5 datasets are accessed lazily, and processing operations such as combined risk generation are performed in spatial chunks.
-
-Conceptually:
+The `.prop` files under:
 
 ```text
-Large HDF5 volume
-        │
-        ▼
-Spatial chunk
-        │
-        ▼
-Process chunk
-        │
-        ▼
-Write result
-        │
-        ▼
-Next chunk
+examples/data/synthetic_geohazard/
 ```
 
-This approach allows the same processing workflow to be applied to substantially larger spatial representations than would be practical with a fully materialized NumPy array.
+are synthetic input data and are intentionally included in version control.
 
----
+The HDF5 files generated during execution are intermediate/output files and are intentionally excluded from version control through `.gitignore`.
 
-# Data confidentiality
+## License
 
-The original geohazard datasets are not included in this repository because they contain confidential subsurface information.
-
-The synthetic data provided by the examples are intended exclusively for demonstrating:
-
-- Input data formatting.
-- Regular spatial representation generation.
-- HDF5 storage.
-- Spatial interpolation.
-- Distance representation generation.
-- Heuristic representation generation.
-- Combined risk representation generation.
-- Geohazard evaluation along arbitrary coordinates and trajectories.
-
-The synthetic dataset does not represent the geological conditions of any study area.
-
----
-
-# Reproducibility
-
-The computational workflow provided here is independent of the confidential geohazard datasets.
-
-A user can reproduce the complete processing pipeline using the synthetic example:
-
-```text
-Synthetic source points
-        ↓
-.prop files
-        ↓
-2D / 3D regular spatial representations
-        ↓
-HDF5
-        ↓
-Distance / heuristic / combined representations
-        ↓
-Interpolators
-        ↓
-XYZ coordinates
-        ↓
-Geohazard values
-        ↓
-Trajectory evaluation
-```
-
-The same computational functions can be applied to compatible geohazard datasets following the `.prop` format.
+See the repository for the applicable license information.
