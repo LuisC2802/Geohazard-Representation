@@ -1,8 +1,0 @@
-README.md
-geohazard_interpolation.py
-pyproject.toml
-geohazard_representation.egg-info/PKG-INFO
-geohazard_representation.egg-info/SOURCES.txt
-geohazard_representation.egg-info/dependency_links.txt
-geohazard_representation.egg-info/requires.txt
-geohazard_representation.egg-info/top_level.txt
